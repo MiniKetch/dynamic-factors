@@ -1,0 +1,51 @@
+# Build directories
+build/
+build-*/
+out/
+cmake-build-*/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# C++ build artifacts
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+*.exe
+*.a
+*.lib
+*.pdb
+
+# Wheels & dists
+dist/
+wheelhouse/
+*.whl
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Generated bindings
+*.pyd
+_df_kernel*.so
+_df_kernel*.pyd
+
+# Cache + outputs
+.cache/
+data_cache/
+output/
+data/precomputed/
+*.parquet
+!python/dynamic_factors/data/snapshots/*.parquet
