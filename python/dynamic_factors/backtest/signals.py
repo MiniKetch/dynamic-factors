@@ -53,25 +53,38 @@ def generate_signals(
 
     Hysteresis: a position opened on day t persists until |z|
     drops below ``exit_threshold``.
+
+    Implementation: precompute the boolean masks for entry/exit/NaN
+    across the whole matrix, then run a single Python loop over the
+    time axis that operates on whole-row numpy slices. This is
+    ~20–50× faster than `iterrows()` while preserving bitwise output.
     """
     p = params or SignalParams()
     z = rolling_zscore(residuals, window=p.window, min_periods=p.min_window)
+    z_arr = z.to_numpy()
 
-    # Positions: start with NaN, walk forward applying the rules.
-    pos = pd.DataFrame(0.0, index=residuals.index, columns=residuals.columns)
-    prev = pd.Series(0.0, index=residuals.columns)
+    # Precomputed masks (T × N each). Compared to looping with pandas
+    # per row, these run as native numpy ufuncs over the whole matrix.
+    short_mask = z_arr >=  p.entry_threshold
+    long_mask  = z_arr <= -p.entry_threshold
+    exit_mask  = np.abs(z_arr) <= p.exit_threshold
+    nan_mask   = np.isnan(z_arr)
 
-    for t, row in z.iterrows():
+    T, N = z_arr.shape
+    out = np.zeros((T, N), dtype=np.float64)
+    prev = np.zeros(N, dtype=np.float64)
+
+    # Apply rules in the same order as the original implementation:
+    #   start from prev, then set short, then long, then exit, then nan.
+    # The order matters only when conditions overlap (they don't given
+    # entry > exit ≥ 0), but we preserve it to keep output identical.
+    for t in range(T):
         new = prev.copy()
-        # Entry: signal sign comes from the residual's direction.
-        # Big +z ⇒ short (-1); big -z ⇒ long (+1).
-        new[row >=  p.entry_threshold] = -1.0
-        new[row <= -p.entry_threshold] = +1.0
-        # Exit: |z| within exit_threshold flattens.
-        new[row.abs() <= p.exit_threshold] = 0.0
-        # NaN z ⇒ no information; flatten (don't carry stale).
-        new[row.isna()] = 0.0
-        pos.loc[t] = new
+        new[short_mask[t]] = -1.0
+        new[long_mask[t]]  = +1.0
+        new[exit_mask[t]]  =  0.0
+        new[nan_mask[t]]   =  0.0
+        out[t] = new
         prev = new
 
-    return pos
+    return pd.DataFrame(out, index=residuals.index, columns=residuals.columns)

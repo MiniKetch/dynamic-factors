@@ -46,6 +46,52 @@ def test_generate_signals_emits_minus_one_after_positive_spike(small_residuals):
     assert sigs.loc[small_residuals.index[100], "A"] == -1.0
 
 
+def _generate_signals_loop(residuals, params):
+    """Reference implementation — the pre-refactor iterrows() loop.
+
+    Kept solely as a regression oracle: the vectorised version must
+    produce bitwise-identical output to this on any input.
+    """
+    z = rolling_zscore(residuals, window=params.window,
+                       min_periods=params.min_window)
+    pos = pd.DataFrame(0.0, index=residuals.index, columns=residuals.columns)
+    prev = pd.Series(0.0, index=residuals.columns)
+    for t, row in z.iterrows():
+        new = prev.copy()
+        new[row >=  params.entry_threshold] = -1.0
+        new[row <= -params.entry_threshold] = +1.0
+        new[row.abs() <= params.exit_threshold] = 0.0
+        new[row.isna()] = 0.0
+        pos.loc[t] = new
+        prev = new
+    return pos
+
+
+def test_generate_signals_matches_loop_reference():
+    """The vectorised generate_signals must equal the original loop
+    output on every cell of a representative synthetic residual matrix."""
+    rng = np.random.default_rng(2026)
+    T, N = 250, 8
+    idx = pd.bdate_range("2024-01-01", periods=T)
+    cols = [f"S{i}" for i in range(N)]
+    resid = pd.DataFrame(
+        rng.standard_normal((T, N)) * 0.02,
+        index=idx, columns=cols,
+    )
+    # Inject occasional spikes so signals actually fire.
+    resid.iloc[50, 0] = 0.20
+    resid.iloc[120, 3] = -0.15
+    resid.iloc[180, 5] = 0.10
+
+    params = SignalParams(window=30, entry_threshold=2.0,
+                          exit_threshold=0.5, min_window=20)
+    sigs_vec = generate_signals(resid, params)
+    sigs_loop = _generate_signals_loop(resid, params)
+    assert np.array_equal(sigs_vec.values, sigs_loop.values)
+    assert list(sigs_vec.index) == list(sigs_loop.index)
+    assert list(sigs_vec.columns) == list(sigs_loop.columns)
+
+
 def test_target_positions_respects_per_name_cap():
     """When the equal-split per-name allocation exceeds the cap, the
     cap should bind: each leg gets max_per_name × nav, not nav / n."""
