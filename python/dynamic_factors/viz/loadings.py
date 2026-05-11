@@ -20,7 +20,8 @@ import pandas as pd
 
 from dynamic_factors.factors.pca import PCAResult
 from dynamic_factors.viz._style import (
-    BG_BLACK, BG_PANEL, FACTOR_COLOR, LOADING_NEG, LOADING_POS,
+    BG_BLACK, BG_PANEL, FACTOR_COLOR, HEAT_DIVERGING,
+    LOADING_NEG, LOADING_POS,
     TEXT_BRIGHT, axis_2d, base_layout, require_plotly,
 )
 
@@ -57,16 +58,14 @@ def render_factor_loadings_heatmap(
             for t in loadings.index
         ]
 
-    # Diverging colorscale: positive = gold, negative = pink.
+    # Diverging thermal scale: red-orange (positive peak) → near-black
+    # (zero) → teal-green (negative). Same gradient family as the
+    # eigenvalue spectrum so the whole dashboard reads as one palette.
     fig = go.Figure(go.Heatmap(
         x=loadings.columns.tolist(),
         y=y_labels,
         z=loadings.values,
-        colorscale=[
-            [0.0, LOADING_NEG],
-            [0.5, "rgba(20,20,30,0.9)"],
-            [1.0, LOADING_POS],
-        ],
+        colorscale=HEAT_DIVERGING,
         zmid=0.0,
         colorbar=dict(
             title=dict(text="loading", font=dict(color=TEXT_BRIGHT)),

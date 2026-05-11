@@ -57,7 +57,7 @@ def render_equity_curve(
         fig.add_trace(go.Scatter(
             x=drawdown.index, y=drawdown.values,
             mode="lines", fill="tozeroy",
-            line=dict(color="rgba(255,92,138,0.9)", width=1),
+            line=dict(color="rgba(30,199,156,0.95)", width=1),
             fillcolor=DRAWDOWN_FILL,
             name="drawdown",
             hovertemplate="%{x|%Y-%m-%d}<br>DD = %{y:+.2f} %<extra></extra>",

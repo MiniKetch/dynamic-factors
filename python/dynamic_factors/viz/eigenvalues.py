@@ -18,7 +18,7 @@ from dynamic_factors.factors.pca import PCAResult
 from dynamic_factors.viz._style import (
     AXIS_FAINT, BG_BLACK, BG_PANEL,
     FACTOR_COLOR, LOADING_POS,
-    TEXT_BRIGHT, axis_2d, base_layout, require_plotly,
+    TEXT_BRIGHT, axis_2d, base_layout, heat_at, require_plotly,
 )
 
 
@@ -44,12 +44,21 @@ def render_eigenvalue_spectrum(
     else:
         fig = make_subplots()
 
+    # Per-bar colour along the thermal gradient: biggest factor =
+    # hottest (red-orange), smaller factors fade through gold to
+    # teal-green. Makes the "eigenvalue cliff" visually pop.
+    vals = var_explained.values * 100
+    if vals.max() > 0:
+        bar_colors = [heat_at(v / vals.max()) for v in vals]
+    else:
+        bar_colors = [FACTOR_COLOR] * len(vals)
+
     fig.add_trace(go.Bar(
         x=var_explained.index,
-        y=var_explained.values * 100,
+        y=vals,
         name="Variance explained (%)",
-        marker_color=FACTOR_COLOR,
-        marker_line=dict(color="rgba(255,255,255,0.6)", width=0.5),
+        marker_color=bar_colors,
+        marker_line=dict(color="rgba(255,255,255,0.5)", width=0.5),
         hovertemplate="<b>%{x}</b><br>Variance explained = %{y:.2f} %"
                        "<extra></extra>",
     ), secondary_y=False)
