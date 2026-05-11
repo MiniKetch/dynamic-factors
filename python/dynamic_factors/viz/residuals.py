@@ -57,17 +57,19 @@ def render_residual_zscore(
         name="z-score",
         hovertemplate="%{x|%Y-%m-%d}<br>z = %{y:+.2f}<extra></extra>",
     ), row=2, col=1)
-    for level, label in [
-        ( entry_threshold, "+entry"),
-        (-entry_threshold, "−entry"),
-        ( exit_threshold,  "+exit"),
-        (-exit_threshold,  "−exit"),
+    # Each tuple is (y_level, label, is_entry). is_entry is an explicit
+    # flag so the styling logic doesn't have to parse the label string.
+    for level, _label, is_entry in [
+        ( entry_threshold, "+entry", True),
+        (-entry_threshold, "−entry", True),
+        ( exit_threshold,  "+exit",  False),
+        (-exit_threshold,  "−exit",  False),
     ]:
         fig.add_hline(
             y=level,
             line=dict(
-                color=LOADING_POS if "entry" in label else "rgba(255,255,255,0.3)",
-                width=1, dash="dash" if "entry" in label else "dot",
+                color=LOADING_POS if is_entry else "rgba(255,255,255,0.3)",
+                width=1, dash="dash" if is_entry else "dot",
             ),
             row=2, col=1,
         )

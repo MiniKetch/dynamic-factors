@@ -119,8 +119,7 @@ std::optional<LdltFactor> ldlt(MatrixCRef A) noexcept {
     // The permutation in Eigen's LDLT means matrixL/matrixD are with
     // respect to a permuted matrix. For our use case (small Kalman
     // covariances, well-conditioned by construction) we just compose.
-    out.L = solver.transpositionsP().transpose() *
-            (Lmat * MatrixXd::Identity(A.rows(), A.cols()));
+    out.L = solver.transpositionsP().transpose() * Lmat;
     out.D = solver.vectorD();
     return out;
 }

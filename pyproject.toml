@@ -35,7 +35,6 @@ data = [
 ]
 viz = [
     "plotly>=5.20",
-    "scipy>=1.11",
 ]
 dashboard = [
     "streamlit>=1.30",
