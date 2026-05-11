@@ -81,26 +81,27 @@ class LoadingTracker:
 
         ``factor_returns``: (T × k) DataFrame.
         ``stock_returns``:  (T,) Series, same index.
+
+        Implementation: hands the whole (H, y) pair to the C++ kernel
+        in a single FFI call (`run_batch`). NaN values in ``stock_returns``
+        are passed through verbatim — the C++ side preserves state and
+        emits a NaN residual for those days. This eliminates the
+        per-day Python ↔ C++ marshalling overhead that dominated the
+        prior loop implementation.
         """
         if factor_returns.shape[1] != self.k:
             raise ValueError(
                 f"factor_returns has {factor_returns.shape[1]} cols, "
                 f"expected {self.k}")
         common = factor_returns.index.intersection(stock_returns.index)
-        F = factor_returns.loc[common].to_numpy(dtype=float)
+        F = np.ascontiguousarray(
+            factor_returns.loc[common].to_numpy(dtype=float),
+        )
         y = stock_returns.loc[common].to_numpy(dtype=float)
 
-        # Pre-allocate output arrays.
-        loadings_out = np.empty((len(common), self.k), dtype=float)
-        residuals_out = np.empty(len(common), dtype=float)
-
-        # The Kalman filter's H matrix is (1 × k), so reshape each row
-        # of F into a row vector for the step call.
-        for t in range(len(common)):
-            H = F[t:t + 1, :]
-            innovation = self._kf.step(H, float(y[t]))
-            residuals_out[t] = innovation
-            loadings_out[t] = np.asarray(self._kf.state).flatten()
+        out = self._kf.run_batch(F, y)
+        loadings_out  = np.asarray(out["state_path"])
+        residuals_out = np.asarray(out["residuals"]).flatten()
 
         loadings_df = pd.DataFrame(
             loadings_out, index=common,

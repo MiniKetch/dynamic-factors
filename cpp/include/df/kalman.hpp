@@ -37,6 +37,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <stdexcept>
 
 namespace df {
@@ -50,6 +51,14 @@ public:
     using State    = Eigen::Matrix<double, K, 1>;
     using StateCov = Eigen::Matrix<double, K, K>;
     using Regress  = Eigen::Matrix<double, 1, K>;
+
+    /// Output of a batched run over a full history.
+    struct BatchOut {
+        /// (T × K) — filtered state at the end of each step.
+        Eigen::Matrix<double, Eigen::Dynamic, K> state_path;
+        /// (T,) — innovation at each step (NaN if the observation was NaN).
+        Eigen::VectorXd residuals;
+    };
 
     KalmanFilter(const State& initial_state,
                  const StateCov& initial_cov,
@@ -130,6 +139,47 @@ public:
         cov_   = initial_cov;
         log_likelihood_ = 0.0;
         degenerate_steps_ = 0;
+    }
+
+    /// Run the filter over an entire history in one C++ call.
+    ///
+    /// @param H  (T × K) regressor matrix — row t is the regressors at time t.
+    /// @param y  (T,)    observation vector.
+    ///
+    /// If `y[t]` is NaN, the predict-update is skipped for that index:
+    /// the current state is recorded into state_path.row(t) and the
+    /// residual at t is set to NaN. This means a stock with sporadic
+    /// missing trading days can be filtered without contaminating the
+    /// state with synthetic zeros — important on real S&P 500 data
+    /// where individual stocks miss listing days, halt days, etc.
+    BatchOut run_batch(
+        const Eigen::Matrix<double, Eigen::Dynamic, K>& H,
+        const Eigen::VectorXd& y
+    ) {
+        const Eigen::Index T = H.rows();
+        if (y.size() != T) {
+            throw std::invalid_argument(
+                "KalmanFilter::run_batch: H.rows() must equal y.size()");
+        }
+        BatchOut out;
+        out.state_path.resize(T, K);
+        out.residuals.resize(T);
+
+        for (Eigen::Index t = 0; t < T; ++t) {
+            const double obs = y(t);
+            if (std::isnan(obs)) {
+                // No observation today: skip predict+update so the
+                // state and covariance don't drift on synthetic data.
+                out.state_path.row(t) = state_.transpose();
+                out.residuals(t) = std::numeric_limits<double>::quiet_NaN();
+                continue;
+            }
+            const Regress h_row = H.row(t);
+            const double innovation = step(h_row, obs);
+            out.state_path.row(t) = state_.transpose();
+            out.residuals(t) = innovation;
+        }
+        return out;
     }
 
 private:

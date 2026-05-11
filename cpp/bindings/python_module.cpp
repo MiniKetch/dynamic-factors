@@ -36,6 +36,20 @@ void bind_kalman(py::module_& m, const char* name) {
         .def("step", &KF::step,
              py::arg("H"), py::arg("observed"),
              "Run one predict-update cycle. Returns the innovation.")
+        .def("run_batch",
+             [](KF& self,
+                const Eigen::Matrix<double, Eigen::Dynamic, K>& H,
+                const Eigen::VectorXd& y) {
+                 auto out = self.run_batch(H, y);
+                 py::dict d;
+                 d["state_path"] = out.state_path;
+                 d["residuals"]  = out.residuals;
+                 return d;
+             },
+             py::arg("H"), py::arg("y"),
+             "Run the filter over a full history in one call. "
+             "NaN observations are skipped (state preserved, residual NaN). "
+             "Returns a dict with 'state_path' (T×K) and 'residuals' (T,).")
         .def_property_readonly("state",      &KF::state)
         .def_property_readonly("covariance", &KF::covariance)
         .def_property_readonly("log_likelihood", &KF::log_likelihood)

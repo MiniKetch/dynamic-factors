@@ -74,8 +74,8 @@ def calibrate_process_noise(
                 continue
             x0 = np.zeros((k_factors, 1), dtype=float)
             kf = cls(x0, P0, Q, float(observation_noise))
-            for t in range(n):
-                kf.step(F[t:t + 1, :], float(y[t]))
+            # One FFI call instead of n: same numerical result.
+            kf.run_batch(np.ascontiguousarray(F[:n]), y[:n])
             total_ll += float(kf.log_likelihood)
         scores[q] = total_ll / max(len(sampled), 1)
 

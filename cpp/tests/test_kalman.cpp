@@ -143,6 +143,81 @@ TEST_CASE("KalmanFilter — degenerate_steps starts at zero and survives healthy
 }
 
 
+TEST_CASE("KalmanFilter::run_batch — matches step() loop manually") {
+    // Constant-loadings problem with a 2-dim state.
+    using KF = KalmanFilter<2>;
+    KF::State    s0;    s0.setZero();
+    KF::StateCov P0;    P0 << 10.0, 0.0, 0.0, 10.0;
+    KF::StateCov Q;     Q  << 1e-7, 0.0, 0.0, 1e-7;
+
+    std::mt19937 rng(42);
+    std::normal_distribution<double> normal(0.0, 1.0);
+    constexpr int T = 100;
+    Eigen::Matrix<double, Eigen::Dynamic, 2> H(T, 2);
+    Eigen::VectorXd y(T);
+    const Eigen::Vector2d beta(1.3, -0.6);
+    for (int t = 0; t < T; ++t) {
+        H(t, 0) = normal(rng);
+        H(t, 1) = normal(rng);
+        y(t) = H(t, 0) * beta(0) + H(t, 1) * beta(1) + 0.1 * normal(rng);
+    }
+
+    // Reference: manual step() loop.
+    KF kf_ref(s0, P0, Q, 0.04);
+    Eigen::Matrix<double, Eigen::Dynamic, 2> ref_states(T, 2);
+    Eigen::VectorXd ref_resid(T);
+    for (int t = 0; t < T; ++t) {
+        Eigen::Matrix<double, 1, 2> h_row = H.row(t);
+        const double inn = kf_ref.step(h_row, y(t));
+        ref_states.row(t) = kf_ref.state().transpose();
+        ref_resid(t) = inn;
+    }
+
+    // Batched: same filter inputs.
+    KF kf_batch(s0, P0, Q, 0.04);
+    auto out = kf_batch.run_batch(H, y);
+
+    // End-of-history state must match exactly.
+    CHECK((out.state_path.row(T - 1) - ref_states.row(T - 1))
+          .cwiseAbs().maxCoeff() < 1e-12);
+    CHECK((out.state_path - ref_states).cwiseAbs().maxCoeff() < 1e-12);
+    CHECK((out.residuals  - ref_resid ).cwiseAbs().maxCoeff() < 1e-12);
+}
+
+
+TEST_CASE("KalmanFilter::run_batch — NaN observations are skipped") {
+    using KF = KalmanFilter<2>;
+    KF::State    s0;    s0.setZero();
+    KF::StateCov P0;    P0 << 10.0, 0.0, 0.0, 10.0;
+    KF::StateCov Q;     Q  << 1e-7, 0.0, 0.0, 1e-7;
+
+    std::mt19937 rng(7);
+    std::normal_distribution<double> normal(0.0, 1.0);
+    constexpr int T = 100;
+    Eigen::Matrix<double, Eigen::Dynamic, 2> H(T, 2);
+    Eigen::VectorXd y(T);
+    for (int t = 0; t < T; ++t) {
+        H(t, 0) = normal(rng);
+        H(t, 1) = normal(rng);
+        y(t) = 0.5 * H(t, 0) - 0.3 * H(t, 1) + 0.05 * normal(rng);
+    }
+    // Inject a NaN at t=50.
+    y(50) = std::numeric_limits<double>::quiet_NaN();
+
+    KF kf(s0, P0, Q, 0.01);
+    auto out = kf.run_batch(H, y);
+
+    // Residual at the NaN index must itself be NaN.
+    CHECK(std::isnan(out.residuals(50)));
+    // State at the NaN index must equal state at t-1 (no update happened).
+    CHECK((out.state_path.row(50) - out.state_path.row(49))
+          .cwiseAbs().maxCoeff() == 0.0);
+    // Other residuals remain finite.
+    CHECK(std::isfinite(out.residuals(0)));
+    CHECK(std::isfinite(out.residuals(T - 1)));
+}
+
+
 TEST_CASE("KalmanFilter — degenerate_steps counts pathological updates") {
     // Force a degenerate innovation covariance: zero H (no information),
     // very small numerical state, and inject a negative-definite
