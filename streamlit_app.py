@@ -105,6 +105,9 @@ def cached_pca(_returns_hash: tuple, k: int):
     """Cache key uses the returns hash; the underlying frame is
     passed via session state to avoid recomputing on every rerun."""
     returns = st.session_state["returns"]
+    # Drop the leading NaN row (first row of log returns is always NaN)
+    # and any remaining NaN cells the panel might carry from alignment.
+    returns = returns.dropna(how="any")
     pca = fit_pca(returns, k_factors=k)
     return {
         "eigenvalues": pca.eigenvalues,
@@ -212,6 +215,11 @@ if prices is None or returns is None:
     )
     st.stop()
 
+# Strip the leading NaN row (first row of log returns is always NaN)
+# and any residual NaN cells the panel might still carry — fit_pca,
+# the Kalman tracker, and the backtest all expect clean inputs.
+returns = returns.dropna(how="any")
+prices = prices.loc[returns.index]
 st.session_state["prices"] = prices
 st.session_state["returns"] = returns
 
