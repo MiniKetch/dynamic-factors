@@ -103,11 +103,15 @@ def load_returns() -> pd.DataFrame | None:
 @st.cache_data(ttl=600, show_spinner="Fitting PCA…")
 def cached_pca(_returns_hash: tuple, k: int):
     """Cache key uses the returns hash; the underlying frame is
-    passed via session state to avoid recomputing on every rerun."""
+    passed via session state to avoid recomputing on every rerun.
+
+    PCA can't natively skip NaN cells (the covariance matrix needs a
+    rectangular input), so we drop rows that are entirely NaN and
+    fill the remaining sporadic gaps with 0.0. The Kalman pass handles
+    its own NaNs per stock, so it's only PCA that gets this treatment.
+    """
     returns = st.session_state["returns"]
-    # Drop the leading NaN row (first row of log returns is always NaN)
-    # and any remaining NaN cells the panel might carry from alignment.
-    returns = returns.dropna(how="any")
+    returns = returns.dropna(how="all").fillna(0.0)
     pca = fit_pca(returns, k_factors=k)
     return {
         "eigenvalues": pca.eigenvalues,
@@ -215,15 +219,20 @@ if prices is None or returns is None:
     )
     st.stop()
 
-# Clean the returns panel for downstream consumers (fit_pca, the
-# Kalman tracker, and the backtest all need NaN-free input).
+# Clean the returns panel.
 #
-# Strategy: drop only rows that are entirely NaN (the first row of
-# log returns is always all-NaN by construction), then fill the
-# remaining sporadic gaps with 0.0 — treat a missing day for a stock
-# as "no change". This preserves ~99% of the trading-day rows
-# rather than dropping every row where any single ticker has a gap.
-returns = returns.dropna(how="all").fillna(0.0)
+# We only drop the leading row (first row of log returns is always
+# all-NaN by construction). We *do not* fill remaining gaps with 0.0:
+#
+#   * The Kalman tracker now passes per-stock NaN straight through
+#     to C++ run_batch, which preserves state on missing days. Filling
+#     with 0 would inject synthetic "no-change" observations into the
+#     filter, biasing the loadings.
+#   * PCA still requires NaN-free input — we fill 0 only inside its
+#     cached call (see cached_pca below).
+#   * The backtest consumes residuals downstream and is NaN-tolerant
+#     where needed.
+returns = returns.dropna(how="all")
 prices = prices.loc[returns.index]
 st.session_state["prices"] = prices
 st.session_state["returns"] = returns
