@@ -100,17 +100,41 @@ def load_returns() -> pd.DataFrame | None:
     return pd.read_parquet(r)
 
 
-@st.cache_data(ttl=600, show_spinner="Fitting PCA…")
-def cached_pca(_returns_hash: tuple, k: int):
-    """Cache key uses the returns hash; the underlying frame is
-    passed via session state to avoid recomputing on every rerun.
+# ----------------------------------------------------------------------------
+# Cache design — keep this comment block intact when editing.
+#
+# Streamlit caches keyed by *all* arguments, hashed via st.cache_data's
+# default hasher. We pass the dataframes themselves as explicit positional
+# args so the hash reflects actual data content. We also pass a precomputed
+# `content_hash` (pd.util.hash_pandas_object().sum()) as the first
+# argument — this both speeds up the hash and gives us an obvious cache
+# key in the inspector.
+#
+# DO NOT route inputs through `st.session_state` while keying the cache
+# on a hand-rolled "shape + dates" tuple. Two browser tabs with different
+# sidebar state but identical proxy keys can otherwise hit the same cache
+# entry and return data computed from another tab's session_state.
+# We still use session_state for *display* state (selected ticker,
+# expander toggles) — never for cached-function inputs.
+# ----------------------------------------------------------------------------
 
-    PCA can't natively skip NaN cells (the covariance matrix needs a
-    rectangular input), so we drop rows that are entirely NaN and
-    fill the remaining sporadic gaps with 0.0. The Kalman pass handles
-    its own NaNs per stock, so it's only PCA that gets this treatment.
+
+def _content_hash(df: pd.DataFrame) -> int:
+    """Stable hash of the full dataframe contents (rows × cols × values).
+
+    Cheap (≈ one numpy pass over the values) and exact in the sense that
+    distinct content ⇒ distinct hash with overwhelming probability."""
+    return int(pd.util.hash_pandas_object(df, index=True).sum())
+
+
+@st.cache_data(ttl=600, show_spinner="Fitting PCA…")
+def cached_pca(content_hash: int, returns: pd.DataFrame, k: int):
+    """PCA can't natively skip NaN cells (the covariance matrix needs a
+    rectangular input), so we drop rows that are entirely NaN and fill
+    the remaining sporadic gaps with 0.0. The Kalman pass handles its
+    own NaNs per stock, so it's only PCA that gets this treatment.
     """
-    returns = st.session_state["returns"]
+    del content_hash  # discriminator for the cache key only
     returns = returns.dropna(how="all").fillna(0.0)
     pca = fit_pca(returns, k_factors=k)
     return {
@@ -123,28 +147,43 @@ def cached_pca(_returns_hash: tuple, k: int):
 
 
 @st.cache_data(ttl=600, show_spinner="Tracking time-varying loadings…")
-def cached_kalman_residuals(_pca_hash: tuple, _q: float):
+def cached_kalman_residuals(
+    content_hash: int,
+    factor_returns: pd.DataFrame,
+    returns: pd.DataFrame,
+    q: float,
+):
     """Run the Kalman tracker for every stock and assemble the
     residual matrix. Cached because it's the most expensive step."""
-    factor_returns = st.session_state["factor_returns"]
-    returns = st.session_state["returns"]
+    del content_hash
     paths = track_all_stocks(
         factor_returns, returns,
         k_factors=factor_returns.shape[1],
-        process_noise_diag=_q,
+        process_noise_diag=q,
     )
     residuals = pd.DataFrame(
         {t: paths[t].residuals for t in paths}
     ).reindex(returns.index)
     # Also save loadings paths for the time-evolution chart (per ticker).
-    return residuals, {t: paths[t].loadings for t in paths}
+    # Track total degenerate steps across all per-stock filters — the
+    # methodology tab surfaces this so unusual filter behaviour is visible.
+    total_degenerate = int(sum(p.degenerate_steps for p in paths.values()))
+    return (
+        residuals,
+        {t: paths[t].loadings for t in paths},
+        total_degenerate,
+    )
 
 
 @st.cache_data(ttl=600, show_spinner="Running backtest…")
-def cached_backtest(_residuals_hash: tuple, _q: float, entry: float,
-                     window: int):
-    residuals = st.session_state["residuals"]
-    prices    = st.session_state["prices"]
+def cached_backtest(
+    content_hash: int,
+    residuals: pd.DataFrame,
+    prices: pd.DataFrame,
+    entry: float,
+    window: int,
+):
+    del content_hash
     cfg = BacktestConfig(
         signal_params=SignalParams(
             window=window,
@@ -234,8 +273,6 @@ if prices is None or returns is None:
 #     where needed.
 returns = returns.dropna(how="all")
 prices = prices.loc[returns.index]
-st.session_state["prices"] = prices
-st.session_state["returns"] = returns
 
 # Top metrics.
 c1, c2, c3, c4 = st.columns(4)
@@ -251,12 +288,12 @@ st.write("")
 # Run model
 # ============================================================================
 
-# Cheap hashes that change when the underlying data does.
-returns_hash = (returns.shape, str(returns.index[0]), str(returns.index[-1]))
+# Content hashes — explicit, deterministic, function of actual cell values.
+returns_hash = _content_hash(returns)
+prices_hash  = _content_hash(prices)
 
-pca_dict = cached_pca(returns_hash, k_factors)
+pca_dict = cached_pca(returns_hash, returns, k_factors)
 factor_returns = pca_dict["factor_returns"]
-st.session_state["factor_returns"] = factor_returns
 
 # Reconstruct PCAResult from the cached dict (cache_data needs primitives).
 from dynamic_factors.factors.pca import PCAResult
@@ -268,11 +305,17 @@ pca = PCAResult(
     k_factors=pca_dict["k_factors"],
 )
 
-residuals, loading_paths = cached_kalman_residuals(returns_hash, process_noise)
-st.session_state["residuals"] = residuals
+# Compose a hash of the (returns, factor_returns) pair for the Kalman cache.
+kalman_input_hash = (returns_hash, _content_hash(factor_returns))
+residuals, loading_paths, kalman_degenerate_steps = cached_kalman_residuals(
+    hash(kalman_input_hash), factor_returns, returns, process_noise,
+)
 
-bt_dict = cached_backtest(returns_hash, process_noise,
-                           entry_threshold, zscore_window)
+residuals_hash = _content_hash(residuals)
+bt_dict = cached_backtest(
+    hash((residuals_hash, prices_hash)),
+    residuals, prices, entry_threshold, zscore_window,
+)
 
 
 # ============================================================================
@@ -484,6 +527,15 @@ with tab_about:
         Source: [github.com/MiniKetch/dynamic-factors](https://github.com/MiniKetch/dynamic-factors)
         """
     )
+
+    # Quiet diagnostics — surfaces only when the filter saw something
+    # unusual. In a healthy run this stays at zero.
+    if kalman_degenerate_steps > 0:
+        st.caption(
+            f"Filter diagnostic: {kalman_degenerate_steps} degenerate "
+            "Kalman step(s) across the universe (non-positive innovation "
+            "covariance). State preserved on those steps; informational."
+        )
 
 
 st.divider()
