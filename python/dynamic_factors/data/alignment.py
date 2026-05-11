@@ -32,6 +32,13 @@ def align_panel(
 
     Returns a DataFrame with the same shape semantics as the input.
     """
+    # Defensive: drop duplicate column names. Can happen if upstream
+    # universe data has duplicate tickers, or if yfinance returns the
+    # same ticker twice. Parquet writers reject duplicate columns, so
+    # this guard prevents a pipeline crash several steps downstream.
+    if prices.columns.duplicated().any():
+        prices = prices.loc[:, ~prices.columns.duplicated(keep="first")]
+
     # Forward-fill short gaps.
     filled = forward_fill_limited(prices, limit=forward_fill_limit)
 

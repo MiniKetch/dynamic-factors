@@ -51,6 +51,10 @@ def load_bundled_universe() -> Universe:
                 / "sp500.csv")
     with resources.as_file(snapshot) as path:
         df = pd.read_csv(path)
+    # Defensive: drop any duplicate tickers in the bundled snapshot
+    # so downstream code (e.g. parquet writers, which reject duplicate
+    # column names) never has to think about it.
+    df = df.drop_duplicates(subset="ticker", keep="first").reset_index(drop=True)
     return Universe(
         name="S&P 500 (bundled snapshot)",
         tickers=df["ticker"].tolist(),
