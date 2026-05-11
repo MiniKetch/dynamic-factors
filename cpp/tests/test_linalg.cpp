@@ -73,6 +73,42 @@ TEST_CASE("ledoit_wolf — δ in [0, 1] and output positive-semidefinite") {
     CHECK(solver.eigenvalues().minCoeff() >= -1e-10);
 }
 
+TEST_CASE("ledoit_wolf — matches the explicit outer-product formula") {
+    // Regression test: the buffered π estimator must produce the exact
+    // same shrinkage matrix as the naive outer-product reference.
+    MatrixXd X(60, 5);
+    for (int i = 0; i < 60; ++i) {
+        for (int j = 0; j < 5; ++j) {
+            X(i, j) = std::sin(0.13 * i + 0.41 * j) - 0.02 * (i % 7);
+        }
+    }
+    const MatrixXd C = ledoit_wolf(X);
+
+    // Reference: open-coded with explicit (row * rowᵀ) per t.
+    const auto T = X.rows();
+    const auto N = X.cols();
+    MatrixXd Xd = X;
+    demean_columns(Xd);
+    const MatrixXd S = (Xd.transpose() * Xd) / static_cast<double>(T - 1);
+    const double mu = S.diagonal().mean();
+    const MatrixXd target = mu * MatrixXd::Identity(N, N);
+    double pi_ref = 0.0;
+    for (Eigen::Index t = 0; t < T; ++t) {
+        const VectorXd row = Xd.row(t);
+        const MatrixXd outer = row * row.transpose();
+        pi_ref += (outer - S).array().square().sum();
+    }
+    pi_ref /= static_cast<double>(T);
+    const double gamma_ref = (S - target).array().square().sum();
+    double delta_ref = (gamma_ref > 0.0)
+        ? (pi_ref / gamma_ref) / static_cast<double>(T) : 0.0;
+    if (delta_ref < 0.0) delta_ref = 0.0;
+    if (delta_ref > 1.0) delta_ref = 1.0;
+    const MatrixXd C_ref = (1.0 - delta_ref) * S + delta_ref * target;
+
+    CHECK((C - C_ref).cwiseAbs().maxCoeff() < 1e-12);
+}
+
 
 // ---------------------------------------------------------------------------
 // Symmetric eigendecomposition — round-trip reconstruction + ordering.

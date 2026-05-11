@@ -55,12 +55,18 @@ MatrixXd ledoit_wolf(MatrixCRef returns) {
     const auto Tdbl = static_cast<double>(T);
 
     // π = (1/T) Σ_t Σ_i,j (X_ti X_tj − S_ij)²
-    // Vectorised: compute X_ti X_tj as outer products per row, sum.
+    //
+    // Naively this allocates an N×N outer product per row. We instead
+    // preallocate one buffer outside the loop and reuse it: the outer
+    // product is computed in-place with .noalias() to skip Eigen's
+    // aliasing temporary, then S is subtracted and the Frobenius norm
+    // accumulated. Net: O(N²) per row, O(1) heap allocations total.
     double pi_hat = 0.0;
+    MatrixXd buf(N, N);
     for (Eigen::Index t = 0; t < T; ++t) {
-        const VectorXd row = X.row(t);
-        const MatrixXd outer = row * row.transpose();
-        pi_hat += (outer - S).array().square().sum();
+        buf.noalias() = X.row(t).transpose() * X.row(t);
+        buf -= S;
+        pi_hat += buf.squaredNorm();
     }
     pi_hat /= Tdbl;
 
