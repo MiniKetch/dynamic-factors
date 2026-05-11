@@ -59,7 +59,8 @@ public:
           cov_(initial_cov),
           Q_(process_noise),
           R_(observation_noise),
-          log_likelihood_(0.0) {
+          log_likelihood_(0.0),
+          degenerate_steps_(0) {
         if (R_ <= 0.0) {
             throw std::invalid_argument(
                 "KalmanFilter: observation_noise R must be positive");
@@ -86,9 +87,11 @@ public:
         const double S = (H * cov_ * H.transpose()).value() + R_;
         if (!(S > 0.0)) {
             // Pathological: covariance went non-positive due to
-            // numerical drift. Re-symmetrize and bail with the
-            // current state.
+            // numerical drift. Re-symmetrize, count it, and bail with
+            // the current state. The caller can query degenerate_steps()
+            // after the run to detect that the filter was unhealthy.
             cov_ = 0.5 * (cov_ + cov_.transpose());
+            ++degenerate_steps_;
             return y;
         }
 
@@ -120,11 +123,13 @@ public:
     [[nodiscard]] const State&    state() const noexcept { return state_; }
     [[nodiscard]] const StateCov& covariance() const noexcept { return cov_; }
     [[nodiscard]] double log_likelihood() const noexcept { return log_likelihood_; }
+    [[nodiscard]] int    degenerate_steps() const noexcept { return degenerate_steps_; }
 
     void reset(const State& initial_state, const StateCov& initial_cov) {
         state_ = initial_state;
         cov_   = initial_cov;
         log_likelihood_ = 0.0;
+        degenerate_steps_ = 0;
     }
 
 private:
@@ -133,6 +138,7 @@ private:
     StateCov Q_;
     double   R_;
     double   log_likelihood_;
+    int      degenerate_steps_;
 };
 
 

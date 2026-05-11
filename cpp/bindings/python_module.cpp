@@ -39,6 +39,9 @@ void bind_kalman(py::module_& m, const char* name) {
         .def_property_readonly("state",      &KF::state)
         .def_property_readonly("covariance", &KF::covariance)
         .def_property_readonly("log_likelihood", &KF::log_likelihood)
+        .def_property_readonly("degenerate_steps", &KF::degenerate_steps,
+             "Number of update steps where the innovation covariance went "
+             "non-positive (indicates filter instability; informational).")
         .def("reset", &KF::reset,
              py::arg("initial_state"), py::arg("initial_cov"));
 }

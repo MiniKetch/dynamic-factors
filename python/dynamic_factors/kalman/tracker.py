@@ -34,6 +34,11 @@ class LoadingPath:
     ticker: str
     loadings: pd.DataFrame   # (T × k) filtered loadings
     residuals: pd.Series     # (T,)    innovations
+    # Number of filter steps where the innovation covariance went
+    # non-positive — usually 0; nonzero indicates the filter became
+    # numerically unstable (e.g. Q ≈ 0 with very long histories). The
+    # dashboard surfaces this in the methodology tab.
+    degenerate_steps: int = 0
 
 
 class LoadingTracker:
@@ -108,6 +113,7 @@ class LoadingTracker:
             ticker=str(stock_returns.name) if stock_returns.name else "?",
             loadings=loadings_df,
             residuals=residuals_series,
+            degenerate_steps=int(self._kf.degenerate_steps),
         )
 
 
