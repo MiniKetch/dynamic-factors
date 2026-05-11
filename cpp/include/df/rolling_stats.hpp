@@ -1,13 +1,20 @@
-// df/rolling_stats.hpp — Welford-style online mean/variance and z-score.
+// df/rolling_stats.hpp — naive rolling mean/variance and z-score
+// over a fixed-size window.
+//
+// Naming honesty: this is NOT a Welford-style streaming estimator. It
+// uses running Σx and Σx² with the E[X²] − E[X]² identity, which is
+// fine for our use case (log-return-scale numbers near zero) but would
+// catastrophically cancel at price-scale magnitudes (think $50,000
+// equity values squared). The negative-variance clamp at the bottom of
+// the variance computation is the fingerprint of this method — it
+// covers up the floating-point rounding that pushes the difference
+// slightly below zero when all samples are nearly equal.
 //
 // We use these in two places:
 //   1. Inside the signal generator, where we compute a rolling z-score
 //      of each stock's residual against its own recent history.
 //   2. Inside Kalman tuning, where we compute log-likelihood-equivalent
 //      variances of innovations.
-//
-// The Welford update is stable for long sequences (no catastrophic
-// cancellation) and incremental — perfect for streaming use.
 //
 // All header-only because the templates are short and inlining matters.
 
@@ -52,9 +59,10 @@ public:
         if (samples_.size() < 2) return 0.0;
         const double n = static_cast<double>(samples_.size());
         const double mean = sum_ / n;
-        // Two-pass-equivalent variance via E[X²] - E[X]²; for small
-        // numerical safety we compute the variance from the running
-        // sums and clamp to non-negative.
+        // Variance via E[X²] − E[X]² from running sums. This is the
+        // numerically-naive form: when all samples are close together,
+        // the two terms can be of similar magnitude and the difference
+        // rounds slightly negative. Clamp to zero to absorb that.
         double var = (sum_sq_ - n * mean * mean) / (n - 1.0);
         if (var < 0.0) var = 0.0;
         const double sd = std::sqrt(var);
