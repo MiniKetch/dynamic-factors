@@ -67,6 +67,7 @@ def calibrate_process_noise(
         Q  = q  * np.eye(k_factors)
         P0 = 1.0 * np.eye(k_factors)
         total_ll = 0.0
+        kept_count = 0
         for ticker in sampled:
             y = returns[ticker].dropna().to_numpy(dtype=float)
             n = min(len(y), len(F))
@@ -77,7 +78,13 @@ def calibrate_process_noise(
             # One FFI call instead of n: same numerical result.
             kf.run_batch(np.ascontiguousarray(F[:n]), y[:n])
             total_ll += float(kf.log_likelihood)
-        scores[q] = total_ll / max(len(sampled), 1)
+            kept_count += 1
+        # Average over the number of stocks that actually contributed
+        # to the log-likelihood, not the size of the sampling pool.
+        # When some stocks have very short histories and are skipped,
+        # dividing by `len(sampled)` understates the average and
+        # subtly biases the comparison across Q candidates.
+        scores[q] = total_ll / max(kept_count, 1)
 
     score_series = pd.Series(scores).sort_values(ascending=False)
     best_q = float(score_series.index[0])

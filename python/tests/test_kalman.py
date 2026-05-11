@@ -73,3 +73,34 @@ def test_calibrate_process_noise_picks_finite_q(synthetic_factors_and_stock):
     assert len(scores) == 3
     # All scores should be finite (no NaN log-likelihoods).
     assert np.all(np.isfinite(scores.values))
+
+
+def test_calibrate_process_noise_averages_over_kept_count(
+    synthetic_factors_and_stock,
+):
+    """When some stocks have too-short histories and get skipped,
+    the per-Q score must divide by the kept count, not the sample
+    count. Mixing a long stock with several too-short ones should
+    produce a score close to the long-stock-only score."""
+    factors, ret, _ = synthetic_factors_and_stock
+    # One long stock + several too-short ones (n < 30 ⇒ skipped).
+    short_idx = factors.index[:10]
+    returns_df = pd.DataFrame(
+        {
+            "STK_LONG": ret,
+            "STK_SHORT1": pd.Series(np.random.randn(10), index=short_idx),
+            "STK_SHORT2": pd.Series(np.random.randn(10), index=short_idx),
+            "STK_SHORT3": pd.Series(np.random.randn(10), index=short_idx),
+        }
+    )
+    _, scores_mixed = calibrate_process_noise(
+        factors, returns_df, candidates=(1e-5,), sample_size=None,
+    )
+    _, scores_solo = calibrate_process_noise(
+        factors, returns_df[["STK_LONG"]], candidates=(1e-5,), sample_size=None,
+    )
+    # Both should equal the single long-stock log-likelihood — the
+    # short stocks contribute nothing and aren't counted in the avg.
+    assert float(scores_mixed.iloc[0]) == pytest.approx(
+        float(scores_solo.iloc[0]), rel=1e-9,
+    )
