@@ -215,10 +215,15 @@ if prices is None or returns is None:
     )
     st.stop()
 
-# Strip the leading NaN row (first row of log returns is always NaN)
-# and any residual NaN cells the panel might still carry — fit_pca,
-# the Kalman tracker, and the backtest all expect clean inputs.
-returns = returns.dropna(how="any")
+# Clean the returns panel for downstream consumers (fit_pca, the
+# Kalman tracker, and the backtest all need NaN-free input).
+#
+# Strategy: drop only rows that are entirely NaN (the first row of
+# log returns is always all-NaN by construction), then fill the
+# remaining sporadic gaps with 0.0 — treat a missing day for a stock
+# as "no change". This preserves ~99% of the trading-day rows
+# rather than dropping every row where any single ticker has a gap.
+returns = returns.dropna(how="all").fillna(0.0)
 prices = prices.loc[returns.index]
 st.session_state["prices"] = prices
 st.session_state["returns"] = returns
