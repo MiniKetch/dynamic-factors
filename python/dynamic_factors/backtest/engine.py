@@ -117,7 +117,7 @@ def run_backtest(
         px_today = prices.loc[date]
         # Fill any NaN price with the previous day's value (shouldn't
         # happen on aligned data, but defensive).
-        px_today = px_today.fillna(method="ffill")
+        px_today = px_today.ffill()
 
         rebalance_today = (i % cfg.rebalance_every_n_days == 0)
 
