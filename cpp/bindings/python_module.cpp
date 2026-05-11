@@ -2,7 +2,6 @@
 //
 // Exposes:
 //   * fit_pca(returns, k_factors, shrinkage) → dict
-//   * align_signs(curr, prev) → in-place flip of signs
 //   * KalmanFilter3 / KalmanFilter5 — templated filter for k=3 and 5
 //   * RollingStats — fixed-window mean / variance / z-score
 //

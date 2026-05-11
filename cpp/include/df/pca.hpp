@@ -49,22 +49,10 @@ struct PCAResult {
                                 std::size_t k_factors,
                                 bool shrinkage = true);
 
-
-/// Align signs across two PCA fits.
-///
-/// PCA eigenvectors are determined only up to sign — flipping ALL
-/// signs of one column produces an equally valid eigenvector. When
-/// you re-fit PCA on a sliding window, the signs can flip
-/// arbitrarily between consecutive windows, which makes the
-/// time-evolution of factor loadings look like noise even when it
-/// isn't.
-///
-/// This helper compares each factor's loading vector to the previous
-/// window's loading vector (via dot product) and flips the sign if
-/// the dot is negative — keeping the time series of loadings
-/// continuous.
-///
-/// Modifies `current.loadings` and `current.factor_returns` in place.
-void align_signs(PCAResult& current, const PCAResult& previous);
+// Note: PCA sign-alignment across rolling windows is implemented in
+// Python (see fit_rolling_pca in factors/pca.py). The C++ kernel does
+// not duplicate it since it would never be called — rolling PCA owns
+// the time loop in Python and needs to retain the previous window
+// to do the comparison.
 
 }  // namespace df

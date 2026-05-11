@@ -41,19 +41,4 @@ PCAResult fit_pca(MatrixCRef returns,
     return out;
 }
 
-void align_signs(PCAResult& current, const PCAResult& previous) {
-    const auto k = std::min(current.loadings.cols(),
-                             previous.loadings.cols());
-    for (Eigen::Index i = 0; i < k; ++i) {
-        // If consecutive windows agree on the loading direction
-        // (dot product positive), keep the sign; otherwise flip.
-        const double dot = current.loadings.col(i)
-                                  .dot(previous.loadings.col(i));
-        if (dot < 0.0) {
-            current.loadings.col(i)       *= -1.0;
-            current.factor_returns.col(i) *= -1.0;
-        }
-    }
-}
-
 }  // namespace df

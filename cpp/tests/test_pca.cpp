@@ -1,4 +1,4 @@
-// Tests for PCA — dominant factor extraction + sign alignment.
+// Tests for PCA — dominant factor extraction.
 
 #include <doctest/doctest.h>
 
@@ -78,31 +78,7 @@ TEST_CASE("fit_pca — rejects k_factors out of range") {
 }
 
 
-TEST_CASE("align_signs — flips columns with negative correlation") {
-    PCAResult prev;
-    prev.loadings = Eigen::MatrixXd(3, 2);
-    prev.loadings <<  0.6,  0.5,
-                       0.5, -0.7,
-                       0.6,  0.5;
-    prev.factor_returns = Eigen::MatrixXd(2, 2);
-    prev.factor_returns << 0.0, 0.0, 0.0, 0.0;
-
-    PCAResult curr;
-    curr.loadings = Eigen::MatrixXd(3, 2);
-    // Same shape but the *first* loading is sign-flipped vs prev.
-    curr.loadings << -0.6, 0.5,
-                     -0.5, -0.7,
-                     -0.6,  0.5;
-    curr.factor_returns = Eigen::MatrixXd(2, 2);
-    curr.factor_returns << 1.0, 2.0, 3.0, 4.0;
-
-    align_signs(curr, prev);
-
-    // First column should now agree with prev (positive dot).
-    CHECK(curr.loadings.col(0).dot(prev.loadings.col(0)) > 0.0);
-    // Second column already agreed; should be unchanged.
-    CHECK(curr.loadings(0, 1) == 0.5);
-    // Factor returns flipped along with the loadings.
-    CHECK(curr.factor_returns(0, 0) == doctest::Approx(-1.0));
-    CHECK(curr.factor_returns(1, 1) == doctest::Approx(4.0));
-}
+// Note: sign-alignment across rolling PCA windows is exercised in the
+// Python tests (test_factors.py — fit_rolling_pca aligns columns from
+// the previous window). The C++ helper used to live here but was dead
+// code (never bound, never invoked) so it was removed.
