@@ -12,11 +12,11 @@ This is a real research-grade strategy class. Two-Sigma, AQR, and most multi-str
 
 | Area | Detail |
 |---|---|
-| **C++17 kernel** | Linear algebra (Eigen), covariance + Ledoit-Wolf shrinkage, symmetric eigendecomposition, LDLT factorization, templated Kalman filter (k=3, k=5), online rolling stats. ~95 unit assertions across 20 test cases. |
-| **pybind11 bindings** | Numpy-friendly. Single FFI call per stock for the Kalman pass. |
+| **C++17 kernel** | Linear algebra (Eigen), covariance + Ledoit-Wolf shrinkage, symmetric eigendecomposition, LDLT factorization, templated Kalman filter (k=3, k=5) with batched `run_batch` API, online rolling stats. ~100 unit assertions across 24 test cases. |
+| **pybind11 bindings** | Numpy-friendly. Single FFI call per stock for the Kalman pass (`run_batch` handles the full history including per-stock NaN gaps in C++). |
 | **Python data layer** | Bundled S&P 500 snapshot, batched yfinance fetcher, forward-fill alignment, log-return computation, Parquet persistence. |
 | **PCA layer** | Static + rolling decomposition, sign-alignment between consecutive windows, factor identification (market / sector tilts). |
-| **Kalman layer** | Per-stock loading tracker, process-noise calibration via maximum likelihood. |
+| **Kalman layer** | Per-stock loading tracker that tolerates sporadic missing trading days (no synthetic-zero fill), process-noise calibration via maximum likelihood. |
 | **Backtest engine** | Z-score signals with hysteresis, dollar-neutral long-short portfolio, integer-share constraints, 5 % per-name cap, bid-ask half-spread + commission costs. |
 | **Plotly viz** | Eigenvalue spectrum, factor-loading heatmap, time-evolution lines, residual / z-score panel, equity curve with drawdown. |
 | **Streamlit dashboard** | 6 tabs, live data refresh, PNG snapshot per chart. |
@@ -113,7 +113,7 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-Should print `100% tests passed, 0 tests failed out of 20` with 95 assertions exercised.
+Should print `100% tests passed` with ~24 test cases and ~100 assertions exercised.
 
 Run the Python tests:
 
@@ -122,7 +122,7 @@ pip install -e ".[dev]"
 pytest python/tests
 ```
 
-25 tests covering PCA recovery, Kalman convergence, signal generation, dollar-neutrality, cost models, and end-to-end backtest accounting.
+28 tests covering PCA recovery, Kalman convergence (including process-noise calibration), signal generation, dollar-neutrality, cost models, and end-to-end backtest accounting.
 
 ---
 
