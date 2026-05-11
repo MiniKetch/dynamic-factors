@@ -137,6 +137,36 @@ def test_cost_model_charges_spread_and_commission():
     assert cost == pytest.approx(6.0, abs=1e-9)
 
 
+def test_rebalance_epsilon_skips_cost_charging_on_constant_signals():
+    """When the target shares don't change day-to-day, the engine
+    should not charge spread or commission. Turnover should be ~0
+    after the very first rebalance establishes positions."""
+    T = 80
+    idx = pd.bdate_range("2024-01-01", periods=T)
+    # Build residuals + prices that produce a steady, unchanging
+    # signal: stock A consistently above entry threshold ⇒ -1, B below
+    # ⇒ +1. Trivial: drive residuals to a constant ±large value.
+    resid = pd.DataFrame({
+        "A": np.full(T, 0.10),
+        "B": np.full(T, -0.10),
+    }, index=idx)
+    prices = pd.DataFrame({
+        "A": np.full(T, 100.0),
+        "B": np.full(T, 100.0),
+    }, index=idx)
+
+    result = run_backtest(resid, prices)
+
+    # Warmup is the rolling-window period — past that, signals are
+    # constant and the engine should not be paying daily costs.
+    warmup = result.config.signal_params.window + 5
+    post_warmup_costs = result.costs.iloc[warmup:]
+    post_warmup_turnover = result.turnover.iloc[warmup:]
+    # Strict: not a single cent of cost or turnover after positions settle.
+    assert post_warmup_costs.sum() == pytest.approx(0.0, abs=1e-9)
+    assert post_warmup_turnover.sum() == pytest.approx(0.0, abs=1e-9)
+
+
 def test_run_backtest_smoke(small_residuals):
     """End-to-end engine doesn't crash and produces sensible shapes."""
     prices = (1.0 + small_residuals).cumprod() * 100.0

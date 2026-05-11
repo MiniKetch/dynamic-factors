@@ -35,6 +35,11 @@ class BacktestConfig:
     cost_model: CostModel = field(default_factory=spread_cost_model)
     signal_params: SignalParams = field(default_factory=SignalParams)
     enforce_neutrality: bool = True
+    # Minimum absolute change in total shares (Σ|Δshares|) to trigger
+    # a trade. Below this the rebalance is skipped — no spread paid,
+    # no commission charged, no turnover recorded. 0.5 is sensible
+    # because shares are integer-rounded so a "real" change is ≥ 1.
+    rebalance_share_epsilon: float = 0.5
 
 
 @dataclass
@@ -132,14 +137,23 @@ def run_backtest(
             if cfg.enforce_neutrality:
                 target = enforce_dollar_neutrality(target, px_today)
 
-            # Trade the difference.
+            # Trade the difference — but only if the share delta is
+            # meaningful. Without this guard, daily rebalance charges
+            # spread + commission on rounding noise (e.g. 0 ↔ 1 share)
+            # every single day, inflating the displayed turnover and
+            # eating realistic P&L. See BacktestConfig.rebalance_share_epsilon.
             delta = target.subtract(shares, fill_value=0.0)
-            trade_dollars = (delta * px_today).fillna(0.0)
-            cash -= trade_dollars.sum()  # cash decreases when buying
-            cost = cfg.cost_model.cost_for_trade(delta, px_today)
-            cash -= cost
-            shares = target.copy()
-            turnover = trade_dollars.abs().sum()
+            if delta.abs().sum() < cfg.rebalance_share_epsilon:
+                # Below threshold — leave shares as-is, no costs.
+                cost = 0.0
+                turnover = 0.0
+            else:
+                trade_dollars = (delta * px_today).fillna(0.0)
+                cash -= trade_dollars.sum()  # cash decreases when buying
+                cost = cfg.cost_model.cost_for_trade(delta, px_today)
+                cash -= cost
+                shares = target.copy()
+                turnover = trade_dollars.abs().sum()
         else:
             # No rebalance — drift with prices.
             cost = 0.0
